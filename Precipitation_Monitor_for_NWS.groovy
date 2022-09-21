@@ -27,7 +27,7 @@ import groovy.transform.Field
 @Field static final daysofweek = [1:"Sunday", 2:"Monday", 3:"Tuesday", 4:"Wednesday", 5:"Thursday", 6:"Friday", 7:"Saturday"]
 
 metadata {
-	definition (name: "Precipitation Driver for NWS Data", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
+	definition (name: "Precipitation Monitor for NWS Data", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
         capability "Refresh"
         capability "WaterSensor"
         
