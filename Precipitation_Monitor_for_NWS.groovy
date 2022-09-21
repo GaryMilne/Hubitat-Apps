@@ -188,7 +188,7 @@ def clearAll() {
 
 //Called to run at the polling interval as set by the user preferences.
 def refresh(){
-    log ("refresh", "A refresh() has been initiated.", 0)
+    log ("refresh", "A data refresh has been initiated.", 0)
     //Update the driver with the latest data.
     getData()
     
@@ -365,84 +365,89 @@ def getData() {
 def addRecord(count, details){  
 
     def newRecord = [:] 
-    //Test to see if this is a header row.  These are received more frequently via Hubitat getHTTP request than they are via a normal browser.
-    isHeader = details.toString()
-    isHeader = stripHTMLtags (isHeader)
-    if ( isHeader.contains("AirDwptMax") == true ) return
+    //If the record is not a properly formatted row of data we will get an exception and it will be skipped.
+    try {
+        //Test to see if this is a header row.  These are received more frequently via Hubitat getHTTP request than they are via a normal browser.
+        isHeader = details.toString()
+        isHeader = stripHTMLtags (isHeader)
+        //if ( isHeader.contains("AirDwptMax") == true ) return
     
-    //log.debug ("Value of details is: {$details}.")
-    newRecord.Day = stripHTMLtags (details[0])
-    newRecord.Time = stripHTMLtags (details[1])
-    newRecord.Temp = stripHTMLtags (details[6])
-    precip1Hr = stripHTMLtags (details[15])
-    if (precip1Hr == "") newRecord.Precip1Hr = 0
-    else newRecord.Precip1Hr = precip1Hr.toFloat()
+        newRecord.Day = stripHTMLtags (details[0])
+        newRecord.Time = stripHTMLtags (details[1])
+        newRecord.Temp = stripHTMLtags (details[6])
+        precip1Hr = stripHTMLtags (details[15])
+        if (precip1Hr == "") newRecord.Precip1Hr = 0
+        else newRecord.Precip1Hr = precip1Hr.toFloat()
     
-    //Get the Humidity and put it into a useful state.
-    newRecord.Humidity = stripHTMLtags (details[10])
-    newRecord.Humidity = newRecord.Humidity.replace("%", "")
+        //Get the Humidity and put it into a useful state.
+        newRecord.Humidity = stripHTMLtags (details[10])
+        newRecord.Humidity = newRecord.Humidity.replace("%", "")
     
-    if ( settings.detail == "1" || settings.detail == "2"  ){
-        log ("addRecord", "Value of settings.detail is: ${settings.detail}.", 1)
-        newRecord.Dewpoint = stripHTMLtags (details[7])
-        newRecord.Pressure = stripHTMLtags (details[14])    
-        newRecord.Wind = stripHTMLtags (details[2])
-        }
-    if ( settings.detail == "2"  ){
-        newRecord.Visibility = stripHTMLtags (details[3])
-	    newRecord.Weather = stripHTMLtags (details[4])
-	    newRecord.Sky = stripHTMLtags (details[5])
-        }
+        if ( settings.detail == "1" || settings.detail == "2"  ){
+            log ("addRecord", "Value of settings.detail is: ${settings.detail}.", 1)
+            newRecord.Dewpoint = stripHTMLtags (details[7])
+            newRecord.Pressure = stripHTMLtags (details[14])    
+            newRecord.Wind = stripHTMLtags (details[2])
+            }
+        if ( settings.detail == "2"  ){
+            newRecord.Visibility = stripHTMLtags (details[3])
+	        newRecord.Weather = stripHTMLtags (details[4])
+	        newRecord.Sky = stripHTMLtags (details[5])
+            }
     
-    //Calculate the record number R-XXX from the current date and time.
-    log ("addRecord", "Value of row is: ${row}.", 1)
-    time = newRecord.Time
-	timeDetails = time.tokenize(':')
-	int hour = timeDetails[0].toInteger()
-    log ("addRecord", "Count is: ${count}", 2)
-	int day = newRecord.Day.toInteger()
-    hourOfMonth = day * 24 + hour
-    variable = "R-" + padLeft(hourOfMonth)
-        
-    if (ifRecordExists(variable) == true ){
-        return
-        }
-    else log ("addRecord", "Created record ${variable}.", 0)
-    //Otherwise go ahead and the create the new State variable based on the day and hour the data was reported.
-    state."${variable}" = newRecord
-    
-    //For each record created we should also be deleting an old record that would be 
-    
-     //Record 8 is the most recent record.
-	 if (count == 8) {
-        sendEvent(name: "NewestRecord", value: variable)
-        sendEvent(name: "Day", value: newRecord.Day)
-        sendEvent(name: "Time", value: newRecord.Time)
-        sendEvent(name: "Temperature", value: newRecord.Temp, Unit: "Fahrenheit")
-        sendEvent(name: "Precip1Hr", value: newRecord.Precip1Hr, Unit: "Inches") 
-     }
-    
-     if ( count == 8 && ( settings.detail == "1" || settings.detail == "2"  ) ){
-        sendEvent(name: "Dewpoint", value: newRecord.Dewpoint, Unit : "Fahrenheit")
-        sendEvent(name: "Humidity", value: newRecord.Humidity, Unit: "Percentage RH")
-        sendEvent(name: "Pressure", value: newRecord.Pressure, Unit: "Millibars")
-        sendEvent(name: "Wind", value: newRecord.Wind)
-        }
-         
-         
-    if ( count == 8 && settings.detail == "2" ){
-        sendEvent(name: "Visibility", value: newRecord.Visibility, Unit: "Miles")
-        sendEvent(name: "Weather", value: newRecord.Weather)
-        sendEvent(name: "SkyConditions", value: newRecord.Sky)
-        }
-    
-    //Now clean up the record that has become out of date.
-    String recordToPurge = calcExpiredRecord(variable)
-    if (ifRecordExists(recordToPurge) == true ){
-        log ("addRecord", "Record ${recordToPurge} has expired and will be purged.", 0)
-        state.remove(recordToPurge)
-        return
-        }
+        //Calculate the record number R-XXX from the current date and time.
+        log ("addRecord", "Value of row is: ${row}.", 1)
+		time = newRecord.Time
+		timeDetails = time.tokenize(':')
+		int hour = timeDetails[0].toInteger()
+		log ("addRecord", "Count is: ${count}", 2)
+		int day = newRecord.Day.toInteger()
+		hourOfMonth = day * 24 + hour
+		variable = "R-" + padLeft(hourOfMonth)
+			
+		if (ifRecordExists(variable) == true ){
+    	    return
+            }
+        else log ("addRecord", "Created record ${variable}.", 0)
+		//Otherwise go ahead and the create the new State variable based on the day and hour the data was reported.
+		state."${variable}" = newRecord
+		
+		//For each record created we should also be deleting an old record that would be 
+		
+		 //Record 8 is the most recent record.
+		 if (count == 8) {
+			sendEvent(name: "NewestRecord", value: variable)
+			sendEvent(name: "Day", value: newRecord.Day)
+			sendEvent(name: "Time", value: newRecord.Time)
+			sendEvent(name: "Temperature", value: newRecord.Temp, Unit: "Fahrenheit")
+			sendEvent(name: "Precip1Hr", value: newRecord.Precip1Hr, Unit: "Inches") 
+		 }
+		
+		 if ( count == 8 && ( settings.detail == "1" || settings.detail == "2"  ) ){
+			sendEvent(name: "Dewpoint", value: newRecord.Dewpoint, Unit : "Fahrenheit")
+			sendEvent(name: "Humidity", value: newRecord.Humidity, Unit: "Percentage RH")
+			sendEvent(name: "Pressure", value: newRecord.Pressure, Unit: "Millibars")
+			sendEvent(name: "Wind", value: newRecord.Wind)
+			}
+			 
+			 
+		if ( count == 8 && settings.detail == "2" ){
+			sendEvent(name: "Visibility", value: newRecord.Visibility, Unit: "Miles")
+			sendEvent(name: "Weather", value: newRecord.Weather)
+			sendEvent(name: "SkyConditions", value: newRecord.Sky)
+			}
+		
+		//Now clean up the record that has become out of date.
+		String recordToPurge = calcExpiredRecord(variable)
+		if (ifRecordExists(recordToPurge) == true ){
+			log ("addRecord", "Record ${recordToPurge} has expired and will be purged.", 0)
+			state.remove(recordToPurge)
+			return
+			}
+	}
+    catch (Exception e){
+		log ("addRecord", "Nothing done - row did not contain valid weather data.", 1)
+		}
 }
 
 //For each record created we should also be deleting an old record so that the number of retained records is <= settings.retention.
