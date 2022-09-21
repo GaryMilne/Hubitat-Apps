@@ -27,7 +27,7 @@ import groovy.transform.Field
 @Field static final daysofweek = [1:"Sunday", 2:"Monday", 3:"Tuesday", 4:"Wednesday", 5:"Thursday", 6:"Friday", 7:"Saturday"]
 
 metadata {
-	definition (name: "Rainfall", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
+	definition (name: "Precipitation Driver for NWS Data", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
         capability "Refresh"
         capability "WaterSensor"
         
@@ -63,7 +63,7 @@ metadata {
         command "clearAll", [[name:"Clears all State Variables and Current States. All calculated values for precipitation will be reset to zero. Do a browser refresh in order to see changes in State Variables."]]
         command "refresh", [[name:"Requests the latest data from NWS and adds it to the state variables. If a record is added then the equivalent expired record is deleted. Re-calculates precip, temp and humidity stats for rolling averages."]]
         command "removeExpired", [[name:"Removes expired records from the State Variables. This function should not be needed if the driver is able to run periodically."]]
-        command "test"
+        //command "test"
 	}
     
 	section("Configure the Inputs"){
