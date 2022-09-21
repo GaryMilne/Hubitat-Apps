@@ -27,7 +27,7 @@ import groovy.transform.Field
 @Field static final daysofweek = [1:"Sunday", 2:"Monday", 3:"Tuesday", 4:"Wednesday", 5:"Thursday", 6:"Friday", 7:"Saturday"]
 
 metadata {
-	definition (name: "Rainfall", namespace: "garyjmilne", author: "Gary J. Milne", singleThreaded: true) {
+	definition (name: "Rainfall", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
         capability "Refresh"
         capability "WaterSensor"
         
@@ -261,7 +261,7 @@ def dayInfo(dayOfMonth){
     today = now.date
     
     //How far back is the day of interest.
-    int diff = today - dayOfMonth
+    int diff = today - dayOfMonth.toInteger()
     
     //Subtract that many days
     day = now - diff
@@ -619,8 +619,9 @@ def getPrecipTotals(dayOfMonth){
         }       
     
     variable = "Precip-" + map.dayName
+    PrecipTotal = PrecipTotal.round(3)
     sendEvent(name: variable, value: PrecipTotal)
-    log ("getPrecipTotals", "Total Precip for day ${dayOfMonth} is: ${PrecipTotal.round(3)}", 0)
+    log ("getPrecipTotals", "Total Precip for day ${dayOfMonth} is: ${PrecipTotal}", 0)
     return PrecipTotal
 }
 
