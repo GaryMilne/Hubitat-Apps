@@ -1,6 +1,6 @@
 /**
-*  Precipitation Monitor for NWS
-*  Version: v1.0.0
+*  Precipitation and Weather Monitor for NWS Data
+*  Version: v1.0.1
 *  Download: See importUrl in definition
 *  Description: Retrieves Precipitation and other information from the National Weather Service for a specific airport.
 *  Intended to be used in combination with a sprinkler system to optimise the use of water.
@@ -14,10 +14,11 @@
 *
 *  Precipitation Monitor - CHANGELOG
 *  Version 1.0.0 - Initial public release.
+*  Version 1.0.1 - Name change to 'Precipitation and Weather Monitor for NWS Data'
 *
 *  Authors Notes:
 *
-*  Gary Milne - September 20th, 2022
+*  Gary Milne - September 28th, 2022
 *
 **/
 
@@ -27,7 +28,7 @@ import groovy.transform.Field
 @Field static final daysofweek = [1:"Sunday", 2:"Monday", 3:"Tuesday", 4:"Wednesday", 5:"Thursday", 6:"Friday", 7:"Saturday"]
 
 metadata {
-	definition (name: "Precipitation Monitor for NWS Data", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
+	definition (name: "Precipitation and Weather Monitor for NWS Data", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
         capability "Refresh"
         capability "WaterSensor"
         
