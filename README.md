@@ -1,2 +1,2 @@
 # Hubitat-Apps
-Repository for Hubitat Apps
+Repository for standalone Hubitat Apps
