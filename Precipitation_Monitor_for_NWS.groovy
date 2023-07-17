@@ -1,6 +1,6 @@
 /**
 *  Precipitation and Weather Monitor for NWS Data
-*  Version: v1.0.1
+*  Version: v1.0.2
 *  Download: See importUrl in definition
 *  Description: Retrieves Precipitation and other information from the National Weather Service for a specific airport.
 *  Intended to be used in combination with a sprinkler system to optimise the use of water.
@@ -15,10 +15,10 @@
 *  Precipitation Monitor - CHANGELOG
 *  Version 1.0.0 - Initial public release.
 *  Version 1.0.1 - Name change to 'Precipitation and Weather Monitor for NWS Data'
-*
+*  Version 1.0.2 - Fixes a bug that prevented expired records from being deleted.
 *  Authors Notes:
 *
-*  Gary Milne - September 28th, 2022
+*  Gary Milne - July 16th, 2023
 *
 **/
 
@@ -62,8 +62,8 @@ metadata {
         attribute "water", "enum"
        
         command "clearAll", [[name:"Clears all State Variables and Current States. All calculated values for precipitation will be reset to zero. Do a browser refresh in order to see changes in State Variables."]]
-        command "refresh", [[name:"Requests the latest data from NWS and adds it to the state variables. If a record is added then the equivalent expired record is deleted. Re-calculates precip, temp and humidity stats for rolling averages."]]
-        command "removeExpired", [[name:"Removes expired records from the State Variables. This function should not be needed if the driver is able to run periodically."]]
+        command "refresh", [[name:"Requests the latest data from NWS and adds it to the state variables. Re-calculates precip, temp and humidity stats for rolling averages. Any expired records are deleted by a call to removeExpired()."]]
+        command "removeExpired", [[name:"Removes expired records from the State Variables. This function is run automatically after each update is received."]]
         //command "test"
 	}
     
@@ -184,7 +184,7 @@ def clearAll() {
     device.deleteCurrentState("Temperature24HrAvg")
     device.deleteCurrentState("Humidity24HrAvg")
     device.deleteCurrentState("water")
-    log ("clearAll", "All State Variables and Currernt States have been cleared.", 0)
+    log ("clearAll", "All State Variables and Current States have been cleared.", 0)
 }
 
 //Called to run at the polling interval as set by the user preferences.
@@ -227,6 +227,11 @@ void daily(){
     
     //Do a final count for the Precipitation for Yesterday.
     result = getPrecipTotals(getYesterday())
+    
+    //Now clean up the record that has become out of date.
+    retainList = createRecordRetentionList()
+    //Purge any records not within the retainList
+    purgeExpiredRecords(retainList)
 }
 
 //**********************************************************
@@ -437,14 +442,12 @@ def addRecord(count, details){
 			sendEvent(name: "Weather", value: newRecord.Weather)
 			sendEvent(name: "SkyConditions", value: newRecord.Sky)
 			}
-		
+        
 		//Now clean up the record that has become out of date.
-		String recordToPurge = calcExpiredRecord(variable)
-		if (ifRecordExists(recordToPurge) == true ){
-			log ("addRecord", "Record ${recordToPurge} has expired and will be purged.", 0)
-			state.remove(recordToPurge)
-			return
-			}
+        retainList = createRecordRetentionList()
+        //Purge any records not within the retainList
+        purgeExpiredRecords(retainList)
+    
 	}
     catch (Exception e){
 		log ("addRecord", "Nothing done - row did not contain valid weather data.", 1)
@@ -532,31 +535,28 @@ def createRecordRetentionList(){
     return preserveList
 }
 
+
+
 //Removes any state variables whose names are not within the retainList.
 //Only used for bulk operations
-def purgeExpiredRecords(retainList){
-    log ("purgeExpiredRecords", "Purging expired records!", 1)
-    int maxRecords = 31 * 24
-    int i = 0
-    while ( i < maxRecords ){
-        variable = "R-${i}"
-        def value = state."${variable}"
-        if (value != null ){ 
-            //log.info ("State Variable ${variable} exists and value is: ${value} " )
-            //So there is state variable by this name.  Let's see if it is in the retainList
-            if ( retainList.toString().contains(variable) == true ){
-                log ("purgeExpiredRecords", "Preserved record: " + variable , 1)
-                }
-            else {
-                state.remove(variable)
-                log ("purgeExpiredRecords", "Purged record: " + variable , 1)
-            }
+def purgeExpiredRecords(List retainList) {
+    def keysToRemove = []
+    
+    //Iterate through state and determine which records need to be removed and add them to a list.
+    //You cannot remove items from a list while it is being iterated.
+    state.each { key, value ->
+        if (!retainList.contains(key)) {
+            keysToRemove.add(key)
         }
-     //A small pause to stop the driver from hogging all the resources as this is an intensive loop otherwise.
-     pauseExecution(10)
-     i++   
+    }
+    
+    //Now remove the records identified as expired.
+    keysToRemove.each { keyToRemove ->
+        state.remove(keyToRemove)
+        log ("purgeExpiredRecords", "Purged record: " + keyToRemove , 0)
     }
 }
+
 
 
 //**********************************************************
@@ -613,7 +613,7 @@ def getPrecipTotals(dayOfMonth){
     float PrecipTotal = 0
     recordList = createRecordRetentionList()
     recordList.each {
-        log ("getPrecipTotals", "it is: ${it}", 2)
+        log ("getPrecipTotals", "Record: ${it}", 2)
          
         if ( ifRecordExists(it) == true ){
             def record = state."${it}"
