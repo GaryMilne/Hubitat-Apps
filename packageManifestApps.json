@@ -7,7 +7,7 @@
   "drivers": [
     {
       "id": "c38ea354-b968-411a-99ae-58e75178c4ba",
-      "name": "<p style='color:blue'>Precipitation and Weather Monitor for NWS Data</p>",
+      "name": "Precipitation and Weather Monitor for NWS Data",
       "namespace": "garyjmilne",
       "location": "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy",
       "required": true,
