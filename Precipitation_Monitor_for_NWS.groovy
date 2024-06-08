@@ -1,6 +1,6 @@
 /**
 *  Precipitation and Weather Monitor for NWS Data
-*  Version: v1.0.2
+*  Version: v1.1
 *  Download: See importUrl in definition
 *  Description: Retrieves Precipitation and other information from the National Weather Service for a specific airport.
 *  Intended to be used in combination with a sprinkler system to optimise the use of water.
@@ -16,16 +16,19 @@
 *  Version 1.0.0 - Initial public release.
 *  Version 1.0.1 - Name change to 'Precipitation and Weather Monitor for NWS Data'
 *  Version 1.0.2 - Fixes a bug that prevented expired records from being deleted.
-*  Authors Notes:
+*  Version 1.1.0 - Simplified some of the calculations. Accomodated a change in the URL used by the NWS for retreiving this data. Fixed bug with totals when period spans across months. Added a CheckWateringThreshold so it could be called externally if desired.
 *
-*  Gary Milne - July 16th, 2023
+*  Authors Notes:
+*  Known limitations: When the day is January 1st it will incorrectly calculate the day of the week for the prior day because it will use the current year instead of the prior year. Precipitation will be correct but it will be assigned to the wrong day. Something for a future release.
+*
+*  Gary Milne - June 8th, 2024
 *
 **/
 
 import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Date
 import groovy.transform.Field
-
-@Field static final daysofweek = [1:"Sunday", 2:"Monday", 3:"Tuesday", 4:"Wednesday", 5:"Thursday", 6:"Friday", 7:"Saturday"]
 
 metadata {
 	definition (name: "Precipitation and Weather Monitor for NWS Data", namespace: "garyjmilne", author: "Gary J. Milne", importUrl: "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy", singleThreaded: true) {
@@ -39,38 +42,39 @@ metadata {
         attribute "Visibility", "number"         //Visibility in miles
         attribute "Weather",  "string"           //Text description of weather
         attribute "SkyConditions", "string"      //Text description of clouds and altitude
-        attribute "Temperature", "number"        //Temperature in F for US.
         attribute "Dewpoint", "number"           //Dewpoint in F for US
         attribute "Humidity", "number"           //Humidity in %
-        attribute "Pressure", "number"            //Pressure in milliebar
-        attribute "Precip1Hr", "number"           //Rainfall for the hour.
-        attribute "Precip-Monday", "number"       //Rainfall total for Monday etc., etc.
+        attribute "Humidity24HrAvg", "number"    //Rolling 24Hr average Humidity
+        attribute "Pressure", "number"           //Pressure in millibar
+        attribute "Precip-Today", "number"
+        attribute "Precip-Yesterday", "number"
+        attribute "Precip-Monday", "number"      //Rainfall total for Monday etc., etc.
         attribute "Precip-Tuesday", "number"
         attribute "Precip-Wednesday", "number"
         attribute "Precip-Thursday", "number"
         attribute "Precip-Friday", "number"
         attribute "Precip-Saturday", "number"
         attribute "Precip-Sunday", "number"
-        attribute "Precip-Today", "number"
-        attribute "Precip-Yesterday", "number"
-        attribute "Precip3Hr", "number"            //Rolling 3Hr rainfall total etc.
+        attribute "Precip1Hr", "number"          //Rainfall for the hour.
+        attribute "Precip3Hr", "number"          //Rolling 3Hr rainfall total etc.
         attribute "Precip6Hr", "number"
         attribute "Precip12Hr", "number"
         attribute "Precip24Hr", "number"
-        attribute "Temperature24HrAvg", "number"      //Rolling 24Hr average Temperature
-        attribute "Humidity24HrAvg", "number"         //Rolling 24Hr average Humidity
+        attribute "Temperature", "number"        //Temperature in F for US.
+        attribute "Temperature24HrAvg", "number" //Rolling 24Hr average Temperature
         attribute "water", "enum"
        
         command "clearAll", [[name:"Clears all State Variables and Current States. All calculated values for precipitation will be reset to zero. Do a browser refresh in order to see changes in State Variables."]]
         command "refresh", [[name:"Requests the latest data from NWS and adds it to the state variables. Re-calculates precip, temp and humidity stats for rolling averages. Any expired records are deleted by a call to removeExpired()."]]
         command "removeExpired", [[name:"Removes expired records from the State Variables. This function is run automatically after each update is received."]]
-        //command "test"
+        command "checkWateringThreshold", [[name:"Compare the Watering Threshold against the precipitation received in the last 24 hours and set the 'water' sensor accordingly."]]
+        command "test"
 	}
     
 	section("Configure the Inputs"){
         input name: "airportCode", type: "text", title: bold(dodgerBlue("The 4 digit ICAO Airport Code.")), description: "US airport codes all begin with K and can be found here: " + italic(dodgerBlue(" https://en.m.wikipedia.org/wiki/List_of_airports_by_ICAO_code:_K")), required:true
 		input name: "retentionPeriod", type: "number", title: bold("Data Retention Period in Hours."), description: "The number of hours of data to retain. Range 48 - 168 (Default: 72)", defaultValue: 72, required:true, range: "48..168"
-        input name: "wateringThreshold", type: "number", title: bold("The watering threshold in inches."), description: "If precipitation total for 'Yesterday' is less than the watering threshold the 'Water Sensor' is set to 'dry'. If watering threshold is exceeded by precipitation the 'Water Sensor' is set to 'wet'.", default: 0.15, required:true
+        input name: "wateringThreshold", type: "number", title: bold("The watering threshold in inches."), description: "If precipitation total for 'Precip24Hr' is less than the watering threshold the 'Water Sensor' is set to 'dry'. If watering threshold is exceeded by precipitation the 'Water Sensor' is set to 'wet'.", default: 0.15, required:true
         input name: "wateringThresholdCheckTime", type: "enum", title: bold("The time at which the watering threshold should be checked."), description: "Water sensor will be turned On if threshold is exceeded.", required:true,
             options: [ [0:" Never"],[1:" 1:00 AM"],[2:"  2:00 AM"],[3:"  3:00 AM"],[4:"  4:00 AM"],[5:"  5:00 AM"],[6:"  6:00 AM"] ], defaultValue: 4
         input name: "pollFrequency", type: "enum", title: bold("Poll Frequency. The frequency the website will be checked for new information."), description: "The time interval between subsequent checks of the website for new information. (Default: 1 Hour.)",
@@ -84,7 +88,9 @@ metadata {
 
 //Quick test function.
 def test(){
-    daily()
+    
+daily()
+    
 }
 
 
@@ -196,14 +202,11 @@ def refresh(){
     //Calculates the Rolling Totals from precip, temp and humidity.
     getRollingTotals()
     
-    //Calculates the Precip for Today so far.
-    today = device.currentValue("Day")
-    sendEvent(name: "Precip-Today", value: getPrecipTotals(today))
+    //Calculates the Precip for Yesterday. This only needs to be run once but the options are to run it every hour (overkill) or only once daily in the "daily()" function which could be missed.
+    sendEvent(name: "Precip-Yesterday", value: getPrecipTotals( getDay("Yesterday") ) )
     
-    //Calculates the Precip for Yesterday. This only needs to be run once but the options are to run it every hour (overkill) or only once daily in the "daily()" function which could be missed because
-    //yesterday = getYesterday()
-    sendEvent(name: "Precip-Yesterday", value: getPrecipTotals(getYesterday()))
-
+    //Calculates the Precip for Today so far.
+    sendEvent(name: "Precip-Today", value: getPrecipTotals( getDay("Today") ) )
 }
  
 //Removes any expired records from the database
@@ -220,18 +223,15 @@ def removeExpired(){
 
 //Call to run on a once daily basis.
 void daily(){
-    
-    log ("daily", "The daily task has been run.", 0)
+    log ("daily", "The daily task has been run.", 1)
     //Compares the Precip24Hr value to the wateringThreshold and sets the status of the Water Sensor accordingly.
     checkWateringThreshold()
     
     //Do a final count for the Precipitation for Yesterday.
-    result = getPrecipTotals(getYesterday())
+    result = getPrecipTotals( getDay("Yesterday") )
     
-    //Now clean up the record that has become out of date.
-    retainList = createRecordRetentionList()
-    //Purge any records not within the retainList
-    purgeExpiredRecords(retainList)
+    //Now remove all expired records
+    removeExpired()
 }
 
 //**********************************************************
@@ -240,44 +240,47 @@ void daily(){
 //**********************************************************
 //**********************************************************
 
-//Get the important information about yesterday. Mostly useful when crossing the boundary between months.
-def getYesterday(){
-    def cal = Calendar.getInstance()
-    today = cal.get(cal.DAY_OF_MONTH)
-    todayNumber = cal.get(Calendar.DAY_OF_WEEK)
-    log ("getYesterday", "today is: ${today} and todayNumber is: ${todayNumber}", 2)
+//Get the required information about either today or yesterday. 
+def getDay(dayInfo){
+    //Get Today's day of the year.
+    Calendar calendar = Calendar.getInstance()
+    calendar.setTime( new Date() )
+    dayOfYear = calendar.get(Calendar.DAY_OF_YEAR)
+    def dateInfo
     
-    //Go back a day
-    cal = cal.previous()
-    yesterday = cal.get(cal.DAY_OF_MONTH)
-    yesterdayNumber = cal.get(Calendar.DAY_OF_WEEK)
-    yesterdayName = daysofweek[yesterdayNumber]
-    log ("getYesterday", "yesterday is: ${yesterday} day of month and yesterdayName is a: ${yesterdayName}.", 2)
+    switch(dayInfo) { 
+        case "Today": 
+            dateInfo = getDateInfo ( dayOfYear )
+            break
+        case "Yesterday": 
+            //Subtract one for yesterday
+            if ( dayOfYear >= 2 ) dateInfo = getDateInfo ( dayOfYear - 1 )
+            else dateInfo = getDateInfo ( 365 )
+            break
+    }
 
-    return yesterday
+    return [dayName: dateInfo.dayName, dayOfMonth: dateInfo.dayOfMonth]
 }
 
-//Returns information about the specified day
-def dayInfo(dayOfMonth){
-    log ("dayInfo", "day of month is: '${dayOfMonth}'.", 2)
+//Given the day of the year (1 - 366) this function returns information about that day.
+def getDateInfo(int dayOfYear) {
+    // Get the current year
     Calendar calendar = Calendar.getInstance()
+    int currentYear = calendar.get(Calendar.YEAR)
     
-    //Calculate the date based on the dayNumber allows this function to be used for any day that is useful.
-    now = new Date()
-    today = now.date
+    // Set the calendar to the specified day of the year
+    calendar.set(Calendar.YEAR, currentYear)
+    calendar.set(Calendar.DAY_OF_YEAR, dayOfYear)
     
-    //How far back is the day of interest.
-    int diff = today - dayOfMonth.toInteger()
-    
-    //Subtract that many days
-    day = now - diff
-    //Now we can get the details for that day.
-    int dayOfWeek = day.getAt(Calendar.DAY_OF_WEEK) // inconsistent!
-    dayName = daysofweek[dayOfWeek]
-    
-    log ("dayInfo", "day is: ${day} day of month. dayOfWeek is: ${dayOfWeek}. dayName is: ${dayName}.", 2)
-    
-    return [dayName: dayName]
+    // Get the details for that day
+    Date date = calendar.getTime()
+    int month = calendar.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-based
+    int dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH)
+    int dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+    String[] daysofweek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    String dayName = daysofweek[dayOfWeek - 1] // Calendar.DAY_OF_WEEK starts from 1 (Sunday)
+        
+    return [month: month, dayOfMonth: dayOfMonth, dayOfWeek: dayOfWeek, dayName: dayName]
 }
 
 //Calculates the hour of the month based on the present time.
@@ -286,10 +289,9 @@ def getHourOfMonthNow(){
     def dayOfMonth = date.getAt(Calendar.DAY_OF_MONTH)
     
     int hour = date.hours
-    int hourOfMonth = dayOfMonth * 24 + hour
+    int hourOfMonth =  dayOfMonth * 24 + hour - 24
     
-    //log.debug ()
-    log ("dayInfo", "getHourOfMonth: Hour of month is: ${hourOfMonth}", 2)
+    log ("getHourOfMonthNow", "getHourOfMonth: Hour of month is: $hourOfMonth", 2)
     return hourOfMonth
 }
 
@@ -336,7 +338,7 @@ def ifRecordExists(recordNumber){
 //addRecord() checks for header information which it ignores, as well as determining whether the record already exists before attempting to add it.
 def getData() {   
     log ("getData", "getData request initiated.", 1)
-    def wxURI = "https://w1.weather.gov/data/obhistory/" + settings.airportCode + ".html"
+    def wxURI = "https://forecast.weather.gov/data/obhistory/" + settings.airportCode + ".html"
     def requestParams = [ uri:  wxURI, contentType: "text/plain" ]
     
     int count = 1        //This is the record counter
@@ -353,8 +355,8 @@ def getData() {
                 limit = settings.retentionPeriod
                 if ( limit > 72 ) limit = 72
                 
-                //count = 8 is the first data record.
-                if (count >= 8 && count < 8 + limit ) {
+                //count = 4 is the first data record.
+                if (count >= 4 && count < 4 + limit ) {
                     addRecord(count, details)
                     }
                 count = count + 1
@@ -365,10 +367,16 @@ def getData() {
             log.warn "getData() Error: ${response?.status}"
 		    }
         }
+    
+	//Now clean up the records that are out of date.
+    retainList = createRecordRetentionList()
+    //Purge any records not within the retainList
+    purgeExpiredRecords(retainList)
 }
 
 //Adds a State variable which is called R-XXX where XXX is the hour of the month. R-XXX contains all the information for a specific hour as reported by the national weather service for a particular location.
 def addRecord(count, details){  
+    log ("addRecord", "Received count: $count with details: $details.", 2)
 
     def newRecord = [:] 
     //If the record is not a properly formatted row of data we will get an exception and it will be skipped.
@@ -390,7 +398,6 @@ def addRecord(count, details){
         newRecord.Humidity = newRecord.Humidity.replace("%", "")
     
         if ( settings.detail == "1" || settings.detail == "2"  ){
-            log ("addRecord", "Value of settings.detail is: ${settings.detail}.", 1)
             newRecord.Dewpoint = stripHTMLtags (details[7])
             newRecord.Pressure = stripHTMLtags (details[14])    
             newRecord.Wind = stripHTMLtags (details[2])
@@ -402,26 +409,26 @@ def addRecord(count, details){
             }
     
         //Calculate the record number R-XXX from the current date and time.
-        log ("addRecord", "Value of row is: ${row}.", 1)
+        log ("addRecord", "Value of row is: ${row}.", 2)
 		time = newRecord.Time
 		timeDetails = time.tokenize(':')
 		int hour = timeDetails[0].toInteger()
 		log ("addRecord", "Count is: ${count}", 2)
 		int day = newRecord.Day.toInteger()
-		hourOfMonth = day * 24 + hour
+		hourOfMonth = day * 24 + hour - 24
 		variable = "R-" + padLeft(hourOfMonth)
 			
 		if (ifRecordExists(variable) == true ){
     	    return
             }
-        else log ("addRecord", "Created record ${variable}.", 0)
+        else log ("addRecord", "Created record ${variable}.", 1)
 		//Otherwise go ahead and the create the new State variable based on the day and hour the data was reported.
 		state."${variable}" = newRecord
 		
 		//For each record created we should also be deleting an old record that would be 
 		
-		 //Record 8 is the most recent record.
-		 if (count == 8) {
+		 //Record 4 is the most recent record.
+		 if (count == 4) {
 			sendEvent(name: "NewestRecord", value: variable)
 			sendEvent(name: "Day", value: newRecord.Day)
 			sendEvent(name: "Time", value: newRecord.Time)
@@ -429,25 +436,18 @@ def addRecord(count, details){
 			sendEvent(name: "Precip1Hr", value: newRecord.Precip1Hr, Unit: "Inches") 
 		 }
 		
-		 if ( count == 8 && ( settings.detail == "1" || settings.detail == "2"  ) ){
+		 if ( count == 4 && ( settings.detail == "1" || settings.detail == "2"  ) ){
 			sendEvent(name: "Dewpoint", value: newRecord.Dewpoint, Unit : "Fahrenheit")
 			sendEvent(name: "Humidity", value: newRecord.Humidity, Unit: "Percentage RH")
 			sendEvent(name: "Pressure", value: newRecord.Pressure, Unit: "Millibars")
 			sendEvent(name: "Wind", value: newRecord.Wind)
 			}
 			 
-			 
-		if ( count == 8 && settings.detail == "2" ){
+		if ( count == 4 && settings.detail == "2" ){
 			sendEvent(name: "Visibility", value: newRecord.Visibility, Unit: "Miles")
 			sendEvent(name: "Weather", value: newRecord.Weather)
 			sendEvent(name: "SkyConditions", value: newRecord.Sky)
 			}
-        
-		//Now clean up the record that has become out of date.
-        retainList = createRecordRetentionList()
-        //Purge any records not within the retainList
-        purgeExpiredRecords(retainList)
-    
 	}
     catch (Exception e){
 		log ("addRecord", "Nothing done - row did not contain valid weather data.", 1)
@@ -487,10 +487,10 @@ def calcExpiredRecord(recordNumber){
 //This function calculates which records should exist based upon the current hour of the month and the retention policy
 //This list is then used to determine which records need to be purged during bulk operations.
 def createRecordRetentionList(){
-    
    //This is the maximum number of hours in the current month
     def map = maxHours()
-    int maxRecords = map.maxHoursThisMonth
+    int maxRecordsThisMonth = map.maxHoursThisMonth
+    int maxRecordsLastMonth = map.maxHoursLastMonth
     
     //This is the current hour of the month which represents the most recent record
     int hourOfMonth = getHourOfMonthNow()
@@ -499,22 +499,22 @@ def createRecordRetentionList(){
     int lowerBound = 0
     int lowerBound2 = 0
     int upperBound = 0
-    int UpperBound2 = 0
+    int upperBound2 = 0
 
     //In this case we only preserve a SINGLE consecutive set of records from "hourOfMonth" back "settings.retentionPeriod" times.
     if ( (hourOfMonth - settings.retentionPeriod) > 0 ) {
-        lowerBound = hourOfMonth - settings.retentionPeriod
+        lowerBound = hourOfMonth - settings.retentionPeriod - 1
         upperBound = hourOfMonth
     }
-
+    
     //In this case we are near the beginning of the month so we need to preserve some records from the end of the month and some from the beginning of the new month.
     if ( (hourOfMonth - settings.retentionPeriod) <= 0 ) {
         lowerBound = 0
         upperBound = hourOfMonth
-        lowerBound2 = maxRecords - settings.retentionPeriod + hourOfMonth
-        upperBound2 = maxRecords
+        lowerBound2 = maxRecordsLastMonth - settings.retentionPeriod + hourOfMonth - 1
+        upperBound2 = maxRecordsLastMonth
     }
-
+    
     //Now add the first set of records to be preserved are added to the list.
     def preserveList = []
     i = lowerBound
@@ -535,8 +535,6 @@ def createRecordRetentionList(){
     return preserveList
 }
 
-
-
 //Removes any state variables whose names are not within the retainList.
 //Only used for bulk operations
 def purgeExpiredRecords(List retainList) {
@@ -553,7 +551,7 @@ def purgeExpiredRecords(List retainList) {
     //Now remove the records identified as expired.
     keysToRemove.each { keyToRemove ->
         state.remove(keyToRemove)
-        log ("purgeExpiredRecords", "Purged record: " + keyToRemove , 0)
+        log ("purgeExpiredRecords", "Purged record: " + keyToRemove , 1)
     }
 }
 
@@ -567,12 +565,14 @@ def purgeExpiredRecords(List retainList) {
 
 //Calculates the sub-total precipitation for the prior 24 hour period.
 def getRollingTotals(){
-    log ("getRollingTotals", "Re-calculating the rolling totals.", 0)
+    log ("getRollingTotals", "Re-calculating the rolling totals.", 2)
     float PrecipSubTotal = 0
     float HumiditySubTotal = 0
     float TempSubTotal = 0
     int recordNumber = 0
     String recordName
+    
+    int hourOfMonth = getHourOfMonthNow()
     
     pauseExecution(250)
     newestRecord = device.currentValue("NewestRecord")
@@ -587,19 +587,24 @@ def getRollingTotals(){
          
         if ( ifRecordExists(recordName) == true ){
             def record = state."${recordName}"
+            //PrecipSubTotal gets incremented every hour.
             PrecipSubTotal = (PrecipSubTotal + record.Precip1Hr).round(3)
-            HumiditySubTotal = HumiditySubTotal + record.Humidity.toInteger()
-            TempSubTotal = TempSubTotal + record.Temp.toInteger()
+            HumiditySubTotal = HumiditySubTotal + record.Humidity.toFloat()
+            TempSubTotal = TempSubTotal + record.Temp.toFloat()
             }
         
-        if ( i == 2 ) sendEvent(name: "Precip3Hr", value: PrecipSubTotal)
-        if ( i == 5 ) sendEvent(name: "Precip6Hr", value: PrecipSubTotal)
-        if ( i == 11 ) sendEvent(name: "Precip12Hr", value: PrecipSubTotal)
-        if ( i == 23 ){
+        //This line gathers only the precip so far for today
+        if ( i == (currentRecord % 24) ) {
+            sendEvent(name: "Precip-Today", value: PrecipSubTotal)
+            }
+        if ( i == 2 && hourOfMonth >= 2 ) sendEvent(name: "Precip3Hr", value: PrecipSubTotal)
+        if ( i == 5 && hourOfMonth >= 5 ) sendEvent(name: "Precip6Hr", value: PrecipSubTotal)
+        if ( i == 11 && hourOfMonth >= 11 ) sendEvent(name: "Precip12Hr", value: PrecipSubTotal)
+        if ( i == 23 && hourOfMonth >= 23 ){
             sendEvent(name: "Precip24Hr", value: PrecipSubTotal)
             sendEvent(name: "Temperature24HrAvg", value: (TempSubTotal/24).toInteger() )
             sendEvent(name: "Humidity24HrAvg", value: (HumiditySubTotal/24).toInteger() )
-            log ("getRollingTotals", "Precip24Hr: ${PrecipSubTotal}    Temperature24HrAvg: ${(TempSubTotal/24).toInteger()}    Humidity24HrAvg: ${(HumiditySubTotal/24).toInteger()}", 1 )
+            log ("getRollingTotals", "Precip24Hr:${PrecipSubTotal}   Temperature24HrAvg:${(TempSubTotal/24).toInteger()}    Humidity24HrAvg:${(HumiditySubTotal/24).toInteger()}", 1 )
             }
         i = i +1
         }
@@ -607,17 +612,14 @@ def getRollingTotals(){
 
 //Calculates the total precipitation for a given day whether or not that day is complete.
 //Note: getRollingTotals() runs at each Poll interval.
-def getPrecipTotals(dayOfMonth){
+def getPrecipTotals(map){
     def recordList = []
-    def map = dayInfo(dayOfMonth)
     float PrecipTotal = 0
     recordList = createRecordRetentionList()
     recordList.each {
-        log ("getPrecipTotals", "Record: ${it}", 2)
-         
         if ( ifRecordExists(it) == true ){
             def record = state."${it}"
-            if (record.Day.toInteger() == dayOfMonth) {
+            if (record.Day.toInteger() == map.dayOfMonth.toInteger() ) {
                 log ("getPrecipTotals", "Precip is: ${record.Precip1Hr}", 2)
                 PrecipTotal = PrecipTotal + record.Precip1Hr
                 }
@@ -627,18 +629,19 @@ def getPrecipTotals(dayOfMonth){
     variable = "Precip-" + map.dayName
     PrecipTotal = PrecipTotal.round(3)
     sendEvent(name: variable, value: PrecipTotal)
-    log ("getPrecipTotals", "Total Precip for day ${dayOfMonth} is: ${PrecipTotal}", 0)
+    log ("getPrecipTotals", "Total Precip for day ${map.dayOfMonth} is: ${PrecipTotal}", 1)
     return PrecipTotal
 }
 
 //Checks to see if the Watering Threshold has been exceeded. If it has, it turns the water sensor to wet.
-void checkWateringThreshold(){     
+void checkWateringThreshold(){  
+    def Precip24Hr = device.currentValue("Precip24Hr")
+    if ( Precip24Hr == null ) Precip24Hr = 0 
+    
     //Refresh the Sub-Totals to make sure they are most recent data.
     getRollingTotals()
     pauseExecution(250)
-        
-    float Precip24Hr = device.currentValue("Precip24Hr").toFloat()
-        
+    
     if ( Precip24Hr > settings.wateringThreshold.toFloat() ) {
         log ("checkWateringThreshold", "The Watering Threshold of ${settings.wateringThreshold} has been exceeded with precipitation of ${Precip24Hr} inches in the past 24 hours. Water sensor set to 'wet'.", 0)
         sendEvent(name: "water", value: "wet")
