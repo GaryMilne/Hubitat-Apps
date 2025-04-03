@@ -1,6 +1,6 @@
 /**
 *  Precipitation and Weather Monitor for NWS Data
-*  Version: v1.1.1
+*  Version: v1.1.2
 *  Download: See importUrl in definition
 *  Description: Retrieves Precipitation and other information from the National Weather Service for a specific airport.
 *  Intended to be used in combination with a sprinkler system to optimise the use of water.
@@ -18,11 +18,12 @@
 *  Version 1.0.2 - Fixes a bug that prevented expired records from being deleted.
 *  Version 1.1.0 - Simplified some of the calculations. Accomodated a change in the URL used by the NWS for retreiving this data. Fixed bug with totals when period spans across months. Added a CheckWateringThreshold so it could be called externally if desired.
 *  Version 1.1.1 - Adds TemperatureMeasurement capability so that the last recorded temperature is available as a temperature device. Renames the attribute "Temperature" to "temperature" for this to operate.
+*  Version 1.1.2 - Removes duplicate water and temperature attributes.
 *
 *  Authors Notes:
 *  Known limitations: When the day is January 1st it will incorrectly calculate the day of the week for the prior day because it will use the current year instead of the prior year. Precipitation will be correct but it will be assigned to the wrong day. Something for a future release.
 *
-*  Gary Milne - March 24th, 2025
+*  Gary Milne - April 3rd, 2025
 *
 **/
 
@@ -63,15 +64,15 @@ metadata {
         attribute "Precip6Hr", "number"
         attribute "Precip12Hr", "number"
         attribute "Precip24Hr", "number"
-        attribute "temperature", "number"        //Temperature in F for US.
+																		   
         attribute "Temperature24HrAvg", "number" //Rolling 24Hr average Temperature
-        attribute "water", "enum"
-		       
+		//Attributes water and temperature are inferred by the capabilities.
+        		       
         command "clearAll", [[name:"Clears all State Variables and Current States. All calculated values for precipitation will be reset to zero. Do a browser refresh in order to see changes in State Variables."]]
         command "refresh", [[name:"Requests the latest data from NWS and adds it to the state variables. Re-calculates precip, temp and humidity stats for rolling averages. Any expired records are deleted by a call to removeExpired()."]]
         command "removeExpired", [[name:"Removes expired records from the State Variables. This function is run automatically after each update is received."]]
         command "checkWateringThreshold", [[name:"Compare the Watering Threshold against the precipitation received in the last 24 hours and set the 'water' sensor accordingly."]]
-        command "test"
+        //command "test"
 	}
     
 	section("Configure the Inputs"){
@@ -177,6 +178,7 @@ def clearAll() {
     device.deleteCurrentState("Pressure")
     device.deleteCurrentState("SkyConditions")
     device.deleteCurrentState("temperature")
+	device.deleteCurrentState("Temperature")
     device.deleteCurrentState("Time")
     device.deleteCurrentState("Visibility")
     device.deleteCurrentState("Weather")
@@ -193,6 +195,7 @@ def clearAll() {
     device.deleteCurrentState("Temperature24HrAvg")
     device.deleteCurrentState("Humidity24HrAvg")
     device.deleteCurrentState("water")
+	device.deleteCurrentState("Water")
     log ("clearAll", "All State Variables and Current States have been cleared.", 0)
 }
 
