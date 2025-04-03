@@ -1,9 +1,9 @@
 {
   "packageName": "Precipitation and Weather Monitor for National Weather Service Data",
   "author": "Gary J. Milne",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "minimumHEVersion": "0.0",
-  "dateReleased": "2025-03-24",
+  "dateReleased": "2025-04-03",
   "drivers": [
     {
       "id": "c38ea354-b968-411a-99ae-58e75178c4ba",
@@ -11,7 +11,7 @@
       "namespace": "garyjmilne",
       "location": "https://raw.githubusercontent.com/GaryMilne/Hubitat-Apps/main/Precipitation_Monitor_for_NWS.groovy",
       "required": true,
-      "version": "1.1.1"
+      "version": "1.1.2"
     }
   ]
 }
